@@ -145,6 +145,7 @@
     .run-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
     /* Upload button */
+    label.upload-btn { cursor: pointer; }
     .upload-btn {
       display: flex; align-items: center; gap: 5px;
       padding: 6px 13px;
@@ -360,8 +361,8 @@
         <button class="mode-btn" data-mode="test">Tests</button>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
-        <button class="upload-btn" id="openFolderBtn">&#128193; Open folder</button>
-        <button class="upload-btn" id="uploadBtn">&#128196; Open file</button>
+        <label for="folderInput" class="upload-btn">&#128193; Open folder</label>
+        <label for="fileInput" class="upload-btn">&#128196; Open file</label>
         <button class="run-btn" id="runBtn">
           <span id="runIcon">&#9654;</span>
           <span id="runLabel">Run</span>
@@ -457,7 +458,6 @@ function loadFile(file) {
 }
 
 // Single file open
-$('uploadBtn').addEventListener('click', () => $('fileInput').click());
 $('fileInput').addEventListener('change', () => {
   loadFile($('fileInput').files[0]);
   $('fileInput').value = '';
@@ -478,7 +478,6 @@ let folderFiles = [];
 let folderContents = {};   // filename → text content
 let activeItem = null;
 
-$('openFolderBtn').addEventListener('click', () => { $('folderInput').value = ''; $('folderInput').click(); });
 $('closeFolderBtn').addEventListener('click', () => {
   $('folderPanel').style.display = 'none';
   $('smartAskCard').style.display = 'none';
