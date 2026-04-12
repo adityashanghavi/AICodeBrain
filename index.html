@@ -158,13 +158,48 @@
       white-space: nowrap;
     }
     .upload-btn:hover { background: var(--bg-tertiary); }
-    #fileInput { display: none; }
+    #fileInput, #folderInput { display: none; }
 
     textarea.drag-over {
       outline: 2px dashed var(--blue-text);
       outline-offset: -4px;
       background: var(--blue-bg);
     }
+
+    /* Folder browser */
+    #folderPanel {
+      border-bottom: 0.5px solid var(--border);
+    }
+    #folderPanel .folder-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 16px;
+      background: var(--bg-secondary);
+      border-bottom: 0.5px solid var(--border);
+      font-size: 12px; color: var(--text-secondary);
+    }
+    #folderPanel .folder-path {
+      font-family: var(--font-mono); font-size: 11px;
+      color: var(--text-tertiary); overflow: hidden;
+      text-overflow: ellipsis; white-space: nowrap; flex: 1;
+    }
+    #fileList {
+      max-height: 180px; overflow-y: auto;
+      display: flex; flex-direction: column;
+    }
+    .file-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 16px;
+      cursor: pointer; font-size: 12px;
+      font-family: var(--font-mono);
+      color: var(--text-secondary);
+      border-bottom: 0.5px solid var(--border);
+      transition: background 0.1s;
+    }
+    .file-item:last-child { border-bottom: none; }
+    .file-item:hover { background: var(--blue-bg); color: var(--blue-text); }
+    .file-item.active { background: var(--blue-bg); color: var(--blue-text); font-weight: 500; }
+    .file-item-icon { font-size: 11px; opacity: 0.6; }
+    .folder-empty { padding: 10px 16px; font-size: 12px; color: var(--text-tertiary); }
 
     /* Editor */
     .editor-meta { display: flex; align-items: center; gap: 8px; }
@@ -275,13 +310,24 @@
         <button class="mode-btn" data-mode="test">Tests</button>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
-        <button class="upload-btn" id="uploadBtn">&#128193; Open file</button>
+        <button class="upload-btn" id="openFolderBtn">&#128193; Open folder</button>
+        <button class="upload-btn" id="uploadBtn">&#128196; Open file</button>
         <button class="run-btn" id="runBtn">
           <span id="runIcon">&#9654;</span>
           <span id="runLabel">Run</span>
         </button>
       </div>
     </div>
+
+    <!-- Folder browser panel (hidden until a folder is opened) -->
+    <div id="folderPanel" style="display:none;">
+      <div class="folder-header">
+        <span class="folder-path" id="folderPath"></span>
+        <button class="upload-btn" id="closeFolderBtn" style="padding:2px 8px;font-size:11px;">&#10005;</button>
+      </div>
+      <div id="fileList"></div>
+    </div>
+
     <div class="card-header">
       <div class="editor-meta">
         <span class="file-label" id="fileLabel">script.py</span>
@@ -335,7 +381,7 @@ editor.addEventListener('input', () => {
   $('lineCount').textContent = n + ' line' + (n === 1 ? '' : 's');
 });
 
-// --- File upload ---
+// --- File loading ---
 function loadFile(file) {
   if (!file) return;
   const reader = new FileReader();
@@ -347,23 +393,63 @@ function loadFile(file) {
   reader.readAsText(file);
 }
 
+// Single file open
 $('uploadBtn').addEventListener('click', () => $('fileInput').click());
-
 $('fileInput').addEventListener('change', () => {
   loadFile($('fileInput').files[0]);
   $('fileInput').value = '';
 });
 
 // Drag-and-drop onto the editor
-editor.addEventListener('dragover', e => {
-  e.preventDefault();
-  editor.classList.add('drag-over');
-});
+editor.addEventListener('dragover', e => { e.preventDefault(); editor.classList.add('drag-over'); });
 editor.addEventListener('dragleave', () => editor.classList.remove('drag-over'));
 editor.addEventListener('drop', e => {
   e.preventDefault();
   editor.classList.remove('drag-over');
   loadFile(e.dataTransfer.files[0]);
+});
+
+// --- Folder browser ---
+const CODE_EXTS = new Set(['.py','.txt','.js','.ts','.jsx','.tsx','.java','.c','.cpp','.cs','.go','.rb','.rs','.r','.m','.sh','.json','.yaml','.yml','.toml','.csv']);
+let folderFiles = [];
+let activeItem = null;
+
+$('openFolderBtn').addEventListener('click', () => { $('folderInput').value = ''; $('folderInput').click(); });
+$('closeFolderBtn').addEventListener('click', () => { $('folderPanel').style.display = 'none'; folderFiles = []; });
+
+$('folderInput').addEventListener('change', () => {
+  const all = Array.from($('folderInput').files);
+  folderFiles = all
+    .filter(f => { const ext = f.name.includes('.') ? '.' + f.name.split('.').pop().toLowerCase() : ''; return CODE_EXTS.has(ext); })
+    .sort((a, b) => a.webkitRelativePath.localeCompare(b.webkitRelativePath));
+
+  const list = $('fileList');
+  list.innerHTML = '';
+  activeItem = null;
+
+  if (folderFiles.length === 0) {
+    list.innerHTML = '<div class="folder-empty">No code files found in this folder.</div>';
+  } else {
+    folderFiles.forEach(file => {
+      const parts = file.webkitRelativePath.split('/');
+      const display = parts.length > 2 ? parts.slice(1).join('/') : parts[parts.length - 1];
+      const item = document.createElement('div');
+      item.className = 'file-item';
+      item.innerHTML = `<span class="file-item-icon">&#128196;</span><span>${display}</span>`;
+      item.addEventListener('click', () => {
+        if (activeItem) activeItem.classList.remove('active');
+        item.classList.add('active');
+        activeItem = item;
+        loadFile(file);
+      });
+      list.appendChild(item);
+    });
+  }
+
+  // Show folder name (top-level folder)
+  const folderName = folderFiles[0]?.webkitRelativePath.split('/')[0] || 'folder';
+  $('folderPath').textContent = folderName + '  —  ' + folderFiles.length + ' file' + (folderFiles.length === 1 ? '' : 's');
+  $('folderPanel').style.display = 'block';
 });
 
 // --- Mode ---
@@ -560,5 +646,6 @@ function escHtml(s) {
 }
 </script>
 <input type="file" id="fileInput" accept=".py,.txt,.js,.ts,.java,.c,.cpp,.cs,.go,.rb,.rs,.r,.m,.sh" style="display:none;" />
+<input type="file" id="folderInput" webkitdirectory style="display:none;" />
 </body>
 </html>
