@@ -420,6 +420,9 @@ print(greet('World'))
   </div>
 </div>
 
+<input type="file" id="fileInput" accept=".py,.txt,.js,.ts,.java,.c,.cpp,.cs,.go,.rb,.rs,.r,.m,.sh" style="display:none;" />
+<input type="file" id="folderInput" webkitdirectory style="display:none;" />
+
 <script>
 const $ = id => document.getElementById(id);
 
@@ -830,7 +833,5 @@ function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 </script>
-<input type="file" id="fileInput" accept=".py,.txt,.js,.ts,.java,.c,.cpp,.cs,.go,.rb,.rs,.r,.m,.sh" style="display:none;" />
-<input type="file" id="folderInput" webkitdirectory style="display:none;" />
 </body>
 </html>
