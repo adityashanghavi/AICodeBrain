@@ -1,0 +1,11 @@
+# Environment variables (never commit your API key)
+.env
+.env.local
+
+# Node
+node_modules/
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db

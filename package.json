@@ -1,0 +1,12 @@
+{
+  "name": "ai-code-brain",
+  "version": "1.0.0",
+  "description": "Python runner powered by Claude",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.0.0"
+  }
+}

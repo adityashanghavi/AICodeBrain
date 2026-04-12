@@ -242,18 +242,6 @@
     <p class="subtitle">Paste Python code and let Claude run, debug, explain, or test it.</p>
   </div>
 
-  <!-- API Key -->
-  <div class="card">
-    <div class="card-header">
-      <span class="card-title">Anthropic API key</span>
-    </div>
-    <div class="api-row">
-      <input class="api-input" type="password" id="apiKeyInput" placeholder="sk-ant-..." autocomplete="off" />
-      <button class="save-btn" id="saveKeyBtn">Save</button>
-    </div>
-    <div class="api-status" id="apiStatus"></div>
-  </div>
-
   <!-- Editor -->
   <div class="card">
     <div class="toolbar">
@@ -264,7 +252,7 @@
         <button class="mode-btn" data-mode="improve">Improve</button>
         <button class="mode-btn" data-mode="test">Tests</button>
       </div>
-      <button class="run-btn" id="runBtn" disabled>
+      <button class="run-btn" id="runBtn">
         <span id="runIcon">&#9654;</span>
         <span id="runLabel">Run</span>
       </button>
@@ -315,31 +303,6 @@ print(greet('World'))
 <script>
 const $ = id => document.getElementById(id);
 
-// --- API key ---
-let apiKey = localStorage.getItem('py_runner_api_key') || '';
-if (apiKey) {
-  $('apiKeyInput').value = apiKey;
-  updateKeyStatus(true);
-  $('runBtn').disabled = false;
-}
-
-$('saveKeyBtn').addEventListener('click', () => {
-  const val = $('apiKeyInput').value.trim();
-  if (!val.startsWith('sk-ant-')) {
-    $('apiStatus').textContent = 'Key should start with sk-ant-';
-    $('apiStatus').className = 'api-status api-missing';
-    return;
-  }
-  apiKey = val;
-  localStorage.setItem('py_runner_api_key', apiKey);
-  updateKeyStatus(true);
-  $('runBtn').disabled = false;
-});
-
-function updateKeyStatus(ok) {
-  $('apiStatus').textContent = ok ? 'Key saved. Ready to run.' : 'No key set.';
-  $('apiStatus').className = 'api-status ' + (ok ? 'api-ok' : 'api-missing');
-}
 
 // --- Editor ---
 const editor = $('codeEditor');
@@ -428,7 +391,7 @@ const modeMeta = {
 // --- Run ---
 let running = false;
 $('runBtn').addEventListener('click', async () => {
-  if (running || !apiKey) return;
+  if (running) return;
   const code = editor.value.trim();
   if (!code) return;
 
@@ -449,14 +412,9 @@ $('runBtn').addEventListener('click', async () => {
   const prompt = prompts[currentMode](code, stdin);
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetch('/api/messages', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 1024,
