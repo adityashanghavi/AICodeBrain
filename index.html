@@ -405,6 +405,7 @@ print(greet('World'))
       <span class="badge badge-info" id="outputBadge"></span>
     </div>
     <div class="output-body" id="outputBody"></div>
+    <div id="outputPlots" style="display:none; padding: 12px 16px; flex-direction:column; gap:12px;"></div>
   </div>
 
   <!-- Footer -->
@@ -425,6 +426,34 @@ print(greet('World'))
 
 <script>
 const $ = id => document.getElementById(id);
+
+// --- Show output + plots ---
+function showOutput(text, plots) {
+  $('outputBody').textContent = text;
+  const plotDiv = $('outputPlots');
+  plotDiv.innerHTML = '';
+  if (plots && plots.length > 0) {
+    plotDiv.style.display = 'flex';
+    plots.forEach(src => {
+      const img = document.createElement('img');
+      img.src = src;
+      img.style.cssText = 'max-width:100%; border-radius:8px; border:0.5px solid var(--border);';
+      plotDiv.appendChild(img);
+    });
+  } else {
+    plotDiv.style.display = 'none';
+  }
+}
+
+// --- Real Python execution ---
+async function runPython(code) {
+  const res = await fetch('/api/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code })
+  });
+  return await res.json(); // { stdout, stderr, exitCode, plots }
+}
 
 // --- Claude API (proxied through local server, key lives in .env) ---
 async function callClaude(promptText, model = 'claude-sonnet-4-20250514', max_tokens = 1024) {
@@ -567,6 +596,8 @@ $('smartAskBtn').addEventListener('click', async () => {
   $('outputBadge').textContent = 'identifying file...';
   $('outputBody').className = 'output-body';
   $('outputBody').textContent = '';
+  $('outputPlots').style.display = 'none';
+  $('outputPlots').innerHTML = '';
 
   try {
     // Step 1: send only file names to identify the right file (use haiku — fast and tiny)
@@ -598,45 +629,41 @@ $('smartAskBtn').addEventListener('click', async () => {
     $('smartFileUsed').textContent = 'Using: ' + matched.webkitRelativePath;
     $('smartFileUsed').style.display = 'block';
 
-    // Step 2: send only that file's content + the action (truncate large files)
+    // Step 2: identify action, then execute or ask Claude
     $('outputBadge').textContent = 'running...';
+    const fullCode = folderContents[matched.webkitRelativePath] || '';
     const MAX_LINES = 300;
-    const rawCode = folderContents[matched.webkitRelativePath] || '';
-    const rawLines = rawCode.split('\n');
-    const code = rawLines.slice(0, MAX_LINES).join('\n') + (rawLines.length > MAX_LINES ? `\n# ... (truncated at ${MAX_LINES} of ${rawLines.length} lines)` : '');
-    const actionPrompt = `You are a code assistant. The user says: "${query}"
+    const truncated = fullCode.split('\n').slice(0, MAX_LINES).join('\n');
 
-Identify the action (run, debug, explain, improve, or test) and perform it on this file (${matched.name}):
-
-\`\`\`
-${code}
-\`\`\`
-
-Start your reply with ACTION: <run|debug|explain|improve|test>, then a newline, then the result.
-
-For "run": simulate execution, show stdout only, end with Exit code: 0 or 1.
-For "debug": list bugs with line numbers and fixes.
-For "explain": describe purpose, logic, and key concepts.
-For "improve": suggest improvements with revised code.
-For "test": generate pytest unit tests.`;
-
-    const response = await callClaude(actionPrompt);
-    const actionMatch = response.match(/^ACTION:\s*(\w+)/m);
-    const action = actionMatch ? actionMatch[1].trim() : 'run';
-    const body = response.replace(/^ACTION:\s*\w+\n?/m, '').trim();
+    // Ask Claude which action to take
+    const actionPrompt = `The user says: "${query}"\n\nWhich action should be performed on the file "${matched.name}"?\nReply with exactly one word: run, debug, explain, improve, or test.`;
+    const actionRaw = (await callClaude(actionPrompt, 'claude-haiku-4-5-20251001', 10)).trim().toLowerCase();
+    const action = ['run','debug','explain','improve','test'].find(a => actionRaw.includes(a)) || 'run';
 
     const meta = modeMeta[action] || modeMeta.run;
     $('outputTitle').textContent = meta.title;
     $('outputBadge').className = 'badge ' + meta.cls;
     $('outputBadge').textContent = meta.badge;
+
+    let body = '', plots = [];
+
     if (action === 'run') {
+      // Real Python execution with plot capture
+      const result = await runPython(fullCode);
+      body = (result.stdout || '') + (result.stderr ? '\n[stderr]\n' + result.stderr : '');
+      plots = result.plots || [];
+      const hasError = result.exitCode !== 0 || /traceback|error:/i.test(body);
       $('outputBody').className = 'output-body mono';
-      const hasError = /traceback|error:/i.test(body);
       $('outputBadge').className = 'badge ' + (hasError ? 'badge-err' : 'badge-ok');
       $('outputBadge').textContent = hasError ? 'error' : 'success';
+    } else {
+      // Claude for debug / explain / improve / test
+      const claudePrompt = `You are a code assistant. Perform the action "${action}" on this file (${matched.name}):\n\n\`\`\`\n${truncated}\n\`\`\``;
+      body = await callClaude(claudePrompt);
     }
-    $('outputBody').textContent = body;
-    addHistory(action in modeMeta ? action : 'run', editor.value, body);
+
+    showOutput(body.trim() || '(no output)', plots);
+    addHistory(action, fullCode, body.trim());
 
   } catch (e) {
     $('outputBody').textContent = 'Error: ' + e.message;
@@ -745,24 +772,31 @@ $('runBtn').addEventListener('click', async () => {
   $('outputBadge').textContent = meta.badge;
   $('outputBody').className = 'output-body';
   $('outputBody').textContent = '';
+  $('outputPlots').style.display = 'none';
+  $('outputPlots').innerHTML = '';
 
   const stdin = $('stdinInput').value;
-  const prompt = prompts[currentMode](code, stdin);
 
   try {
-    const text = await callClaude(prompt);
-
     if (currentMode === 'run') {
+      // Real Python execution
+      const result = await runPython(code);
+      const output = (result.stdout || '') + (result.stderr ? '\n[stderr]\n' + result.stderr : '');
+      const hasError = result.exitCode !== 0 || /traceback|error:/i.test(output);
       $('outputBody').className = 'output-body mono';
-      const hasError = /traceback|error:/i.test(text);
       $('outputBadge').className = 'badge ' + (hasError ? 'badge-err' : 'badge-ok');
       $('outputBadge').textContent = hasError ? 'error' : 'success';
+      showOutput(output.trim() || '(no output)', result.plots);
+      addHistory(currentMode, code, output.trim());
+    } else {
+      // Claude for debug / explain / improve / test
+      const prompt = prompts[currentMode](code, stdin);
+      const text = await callClaude(prompt);
+      showOutput(text, []);
+      addHistory(currentMode, code, text);
     }
-
-    $('outputBody').textContent = text;
-    addHistory(currentMode, code, text);
   } catch (e) {
-    $('outputBody').textContent = 'Error: ' + e.message;
+    showOutput('Error: ' + e.message, []);
     $('outputBadge').className = 'badge badge-err';
     $('outputBadge').textContent = 'failed';
   }
