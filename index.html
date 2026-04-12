@@ -651,7 +651,7 @@ $('smartAskBtn').addEventListener('click', async () => {
       // Real Python execution with plot capture
       const result = await runPython(fullCode);
       body = (result.stdout || '') + (result.stderr ? '\n[stderr]\n' + result.stderr : '');
-      plots = result.plots || [];
+      plots = /\bplot\b/i.test(query) ? (result.plots || []) : [];
       const hasError = result.exitCode !== 0 || /traceback|error:/i.test(body);
       $('outputBody').className = 'output-body mono';
       $('outputBadge').className = 'badge ' + (hasError ? 'badge-err' : 'badge-ok');
