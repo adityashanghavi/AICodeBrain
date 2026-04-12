@@ -427,11 +427,11 @@ print(greet('World'))
 const $ = id => document.getElementById(id);
 
 // --- Claude API (proxied through local server, key lives in .env) ---
-async function callClaude(promptText) {
+async function callClaude(promptText, model = 'claude-sonnet-4-20250514', max_tokens = 1024) {
   const res = await fetch('/api/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2048, messages: [{ role: 'user', content: promptText }] })
+    body: JSON.stringify({ model, max_tokens, messages: [{ role: 'user', content: promptText }] })
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message || 'API error ' + res.status);
@@ -569,11 +569,11 @@ $('smartAskBtn').addEventListener('click', async () => {
   $('outputBody').textContent = '';
 
   try {
-    // Step 1: send only file names to identify the right file
+    // Step 1: send only file names to identify the right file (use haiku — fast and tiny)
     const fileList = folderFiles.map(f => f.webkitRelativePath).join('\n');
     const pickPrompt = `The user has a folder with these files:\n${fileList}\n\nThe user says: "${query}"\n\nWhich single file are they most likely referring to? Reply with only the exact file path from the list above — nothing else.`;
 
-    const pickedPath = (await callClaude(pickPrompt)).trim();
+    const pickedPath = (await callClaude(pickPrompt, 'claude-haiku-4-5-20251001', 100)).trim();
 
     // Find the matching file (fuzzy: exact match or filename match)
     const matched = folderFiles.find(f =>
@@ -598,9 +598,12 @@ $('smartAskBtn').addEventListener('click', async () => {
     $('smartFileUsed').textContent = 'Using: ' + matched.webkitRelativePath;
     $('smartFileUsed').style.display = 'block';
 
-    // Step 2: send only that file's content + the action
+    // Step 2: send only that file's content + the action (truncate large files)
     $('outputBadge').textContent = 'running...';
-    const code = folderContents[matched.webkitRelativePath] || '';
+    const MAX_LINES = 300;
+    const rawCode = folderContents[matched.webkitRelativePath] || '';
+    const rawLines = rawCode.split('\n');
+    const code = rawLines.slice(0, MAX_LINES).join('\n') + (rawLines.length > MAX_LINES ? `\n# ... (truncated at ${MAX_LINES} of ${rawLines.length} lines)` : '');
     const actionPrompt = `You are a code assistant. The user says: "${query}"
 
 Identify the action (run, debug, explain, improve, or test) and perform it on this file (${matched.name}):
