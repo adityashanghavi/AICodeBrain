@@ -263,20 +263,6 @@
       color: var(--text);
     }
 
-    /* Stdin */
-    .stdin-row { display: flex; align-items: center; gap: 10px; padding: 10px 16px; }
-    .stdin-label { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
-    .stdin-input {
-      flex: 1;
-      font-family: var(--font-mono); font-size: 13px;
-      padding: 6px 10px;
-      border-radius: var(--radius-md);
-      border: 0.5px solid var(--border-md);
-      background: var(--bg-secondary);
-      color: var(--text);
-      outline: none;
-    }
-    .stdin-input:focus { border-color: #185fa5; }
 
     /* Output */
     .output-body {
@@ -379,10 +365,6 @@ def greet(name):
 print(greet('World'))
 "></textarea>
 
-    <div id="stdinRow" class="stdin-row">
-      <span class="stdin-label">stdin (optional):</span>
-      <input class="stdin-input" id="stdinInput" type="text" placeholder="e.g. Alice&#10;42  — one value per input() call, separate with \n" />
-    </div>
   </div>
 
   <!-- Smart Ask (shown when a folder is loaded) -->
@@ -684,7 +666,6 @@ $('modeRow').querySelectorAll('.mode-btn').forEach(btn => {
     btn.classList.add('active');
     currentMode = btn.dataset.mode;
     $('runLabel').textContent = btn.textContent;
-    $('stdinRow').style.display = currentMode === 'run' ? 'flex' : 'none';
   });
 });
 
@@ -775,8 +756,6 @@ $('runBtn').addEventListener('click', async () => {
   $('outputPlots').style.display = 'none';
   $('outputPlots').innerHTML = '';
 
-  const stdin = $('stdinInput').value;
-
   try {
     if (currentMode === 'run') {
       // Real Python execution
@@ -790,7 +769,7 @@ $('runBtn').addEventListener('click', async () => {
       addHistory(currentMode, code, output.trim());
     } else {
       // Claude for debug / explain / improve / test
-      const prompt = prompts[currentMode](code, stdin);
+      const prompt = prompts[currentMode](code, '');
       const text = await callClaude(prompt);
       showOutput(text, []);
       addHistory(currentMode, code, text);
