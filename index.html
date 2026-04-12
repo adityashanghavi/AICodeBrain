@@ -160,6 +160,12 @@
     .upload-btn:hover { background: var(--bg-tertiary); }
     #fileInput { display: none; }
 
+    textarea.drag-over {
+      outline: 2px dashed var(--blue-text);
+      outline-offset: -4px;
+      background: var(--blue-bg);
+    }
+
     /* Editor */
     .editor-meta { display: flex; align-items: center; gap: 8px; }
     .file-label { font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
@@ -276,8 +282,6 @@
         </button>
       </div>
     </div>
-    <input type="file" id="fileInput" accept=".py,.txt,.js,.ts,.java,.c,.cpp,.cs,.go,.rb,.rs,.r,.m,.sh" />
-
     <div class="card-header">
       <div class="editor-meta">
         <span class="file-label" id="fileLabel">script.py</span>
@@ -332,10 +336,7 @@ editor.addEventListener('input', () => {
 });
 
 // --- File upload ---
-$('uploadBtn').addEventListener('click', () => $('fileInput').click());
-
-$('fileInput').addEventListener('change', () => {
-  const file = $('fileInput').files[0];
+function loadFile(file) {
   if (!file) return;
   const reader = new FileReader();
   reader.onload = e => {
@@ -344,8 +345,25 @@ $('fileInput').addEventListener('change', () => {
     $('fileLabel').textContent = file.name;
   };
   reader.readAsText(file);
-  // Reset so selecting the same file again still fires change
+}
+
+$('uploadBtn').addEventListener('click', () => $('fileInput').click());
+
+$('fileInput').addEventListener('change', () => {
+  loadFile($('fileInput').files[0]);
   $('fileInput').value = '';
+});
+
+// Drag-and-drop onto the editor
+editor.addEventListener('dragover', e => {
+  e.preventDefault();
+  editor.classList.add('drag-over');
+});
+editor.addEventListener('dragleave', () => editor.classList.remove('drag-over'));
+editor.addEventListener('drop', e => {
+  e.preventDefault();
+  editor.classList.remove('drag-over');
+  loadFile(e.dataTransfer.files[0]);
 });
 
 // --- Mode ---
@@ -541,5 +559,6 @@ function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 </script>
+<input type="file" id="fileInput" accept=".py,.txt,.js,.ts,.java,.c,.cpp,.cs,.go,.rb,.rs,.r,.m,.sh" style="display:none;" />
 </body>
 </html>
