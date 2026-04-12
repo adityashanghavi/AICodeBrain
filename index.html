@@ -144,6 +144,22 @@
     .run-btn:hover:not(:disabled) { background: var(--bg-tertiary); }
     .run-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
+    /* Upload button */
+    .upload-btn {
+      display: flex; align-items: center; gap: 5px;
+      padding: 6px 13px;
+      border-radius: var(--radius-md);
+      border: 0.5px solid var(--border-md);
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.12s;
+      white-space: nowrap;
+    }
+    .upload-btn:hover { background: var(--bg-tertiary); }
+    #fileInput { display: none; }
+
     /* Editor */
     .editor-meta { display: flex; align-items: center; gap: 8px; }
     .file-label { font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
@@ -239,7 +255,7 @@
 <div class="page">
   <div>
     <h1>Python AI Runner</h1>
-    <p class="subtitle">Paste Python code and let Claude run, debug, explain, or test it.</p>
+    <p class="subtitle">Paste or upload Python code and let Claude run, debug, explain, or test it.</p>
   </div>
 
   <!-- Editor -->
@@ -252,15 +268,19 @@
         <button class="mode-btn" data-mode="improve">Improve</button>
         <button class="mode-btn" data-mode="test">Tests</button>
       </div>
-      <button class="run-btn" id="runBtn">
-        <span id="runIcon">&#9654;</span>
-        <span id="runLabel">Run</span>
-      </button>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="upload-btn" id="uploadBtn">&#128193; Open file</button>
+        <button class="run-btn" id="runBtn">
+          <span id="runIcon">&#9654;</span>
+          <span id="runLabel">Run</span>
+        </button>
+      </div>
     </div>
+    <input type="file" id="fileInput" accept=".py,.txt,.js,.ts,.java,.c,.cpp,.cs,.go,.rb,.rs,.r,.m,.sh" />
 
     <div class="card-header">
       <div class="editor-meta">
-        <span class="file-label">script.py</span>
+        <span class="file-label" id="fileLabel">script.py</span>
       </div>
       <span class="pill" id="lineCount">0 lines</span>
     </div>
@@ -309,6 +329,23 @@ const editor = $('codeEditor');
 editor.addEventListener('input', () => {
   const n = editor.value.split('\n').length;
   $('lineCount').textContent = n + ' line' + (n === 1 ? '' : 's');
+});
+
+// --- File upload ---
+$('uploadBtn').addEventListener('click', () => $('fileInput').click());
+
+$('fileInput').addEventListener('change', () => {
+  const file = $('fileInput').files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    editor.value = e.target.result;
+    editor.dispatchEvent(new Event('input'));
+    $('fileLabel').textContent = file.name;
+  };
+  reader.readAsText(file);
+  // Reset so selecting the same file again still fires change
+  $('fileInput').value = '';
 });
 
 // --- Mode ---
