@@ -79,20 +79,6 @@
 
     .card-title { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
 
-    /* API Key section */
-    .api-row { display: flex; gap: 8px; padding: 14px 16px; align-items: center; }
-    .api-input {
-      flex: 1;
-      font-family: var(--font-mono);
-      font-size: 13px;
-      padding: 7px 12px;
-      border-radius: var(--radius-md);
-      border: 0.5px solid var(--border-md);
-      background: var(--bg-secondary);
-      color: var(--text);
-      outline: none;
-    }
-    .api-input:focus { border-color: #185fa5; }
     .save-btn {
       padding: 7px 16px;
       border-radius: var(--radius-md);
@@ -350,16 +336,6 @@
     <p class="subtitle">Paste or upload Python code and let Claude run, debug, explain, or test it.</p>
   </div>
 
-  <!-- API key setup (shown only on GitHub Pages, hidden on localhost) -->
-  <div class="card" id="apiSetupCard" style="display:none;">
-    <div class="card-header"><span class="card-title">API key setup</span></div>
-    <div class="api-row">
-      <input class="api-input" type="password" id="apiKeyInput" placeholder="sk-ant-..." autocomplete="off" />
-      <button class="save-btn" id="saveKeyBtn">Save</button>
-    </div>
-    <div style="padding:0 16px 10px;font-size:12px;" id="apiStatus"></div>
-  </div>
-
   <!-- Editor -->
   <div class="card">
     <div class="toolbar">
@@ -447,51 +423,13 @@ print(greet('World'))
 <script>
 const $ = id => document.getElementById(id);
 
-// --- Environment detection ---
-// On localhost: use the proxy server (API key stays on server, never in browser)
-// On GitHub Pages / anywhere else: call Anthropic directly using a key stored in localStorage
-const IS_LOCAL = ['localhost','127.0.0.1'].includes(window.location.hostname);
-
-// Show API key setup only when NOT running locally
-if (!IS_LOCAL) {
-  $('apiSetupCard').style.display = 'block';
-  const stored = localStorage.getItem('py_runner_api_key') || '';
-  if (stored) { $('apiKeyInput').value = stored; updateKeyStatus(true); }
-}
-$('saveKeyBtn').addEventListener('click', () => {
-  const val = $('apiKeyInput').value.trim();
-  if (!val.startsWith('sk-ant-')) { updateKeyStatus(false); return; }
-  localStorage.setItem('py_runner_api_key', val);
-  updateKeyStatus(true);
-});
-function updateKeyStatus(ok) {
-  $('apiStatus').textContent = ok ? 'Key saved.' : 'Key must start with sk-ant-';
-  $('apiStatus').style.color = ok ? 'var(--green-text)' : 'var(--amber-text)';
-}
-
-// --- Claude API ---
+// --- Claude API (proxied through local server, key lives in .env) ---
 async function callClaude(promptText) {
-  let res;
-  if (IS_LOCAL) {
-    res = await fetch('/api/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2048, messages: [{ role: 'user', content: promptText }] })
-    });
-  } else {
-    const key = localStorage.getItem('py_runner_api_key');
-    if (!key) throw new Error('No API key set. Enter your key in the setup card above.');
-    res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2048, messages: [{ role: 'user', content: promptText }] })
-    });
-  }
+  const res = await fetch('/api/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 2048, messages: [{ role: 'user', content: promptText }] })
+  });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error?.message || 'API error ' + res.status);
   return (data.content || []).map(b => b.text || '').join('');
