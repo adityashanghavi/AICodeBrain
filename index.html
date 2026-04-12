@@ -201,6 +201,56 @@
     .file-item-icon { font-size: 11px; opacity: 0.6; }
     .folder-empty { padding: 10px 16px; font-size: 12px; color: var(--text-tertiary); }
 
+    /* Smart ask */
+    #smartAskCard {
+      background: var(--bg);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .smart-ask-header {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 16px;
+      background: var(--bg-secondary);
+      border-bottom: 0.5px solid var(--border);
+      font-size: 13px; font-weight: 500; color: var(--text-secondary);
+    }
+    .smart-ask-row {
+      display: flex; gap: 8px;
+      padding: 12px 16px;
+      align-items: center;
+    }
+    #smartAskInput {
+      flex: 1;
+      font-size: 14px;
+      padding: 9px 14px;
+      border-radius: var(--radius-md);
+      border: 0.5px solid var(--border-md);
+      background: var(--bg-secondary);
+      color: var(--text);
+      outline: none;
+    }
+    #smartAskInput:focus { border-color: #185fa5; }
+    #smartAskInput::placeholder { color: var(--text-tertiary); }
+    #smartAskBtn {
+      padding: 9px 20px;
+      border-radius: var(--radius-md);
+      border: 0.5px solid var(--border-md);
+      background: var(--blue-bg);
+      color: var(--blue-text);
+      font-size: 13px; font-weight: 500;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.12s;
+    }
+    #smartAskBtn:hover:not(:disabled) { filter: brightness(0.95); }
+    #smartAskBtn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .smart-file-used {
+      padding: 6px 16px 0;
+      font-size: 11px; font-family: var(--font-mono);
+      color: var(--text-tertiary);
+    }
+
     /* Editor */
     .editor-meta { display: flex; align-items: center; gap: 8px; }
     .file-label { font-family: var(--font-mono); font-size: 13px; color: var(--text-secondary); }
@@ -348,6 +398,19 @@ print(greet('World'))
     </div>
   </div>
 
+  <!-- Smart Ask (shown when a folder is loaded) -->
+  <div id="smartAskCard" style="display:none;">
+    <div class="smart-ask-header">
+      &#128269; Ask about your folder
+      <span style="font-size:11px;font-weight:400;color:var(--text-tertiary)" id="smartFolderTag"></span>
+    </div>
+    <div class="smart-ask-row">
+      <input id="smartAskInput" type="text" placeholder='e.g. "Run the eyetracker code" or "Debug the analysis script"' />
+      <button id="smartAskBtn">Ask</button>
+    </div>
+    <div id="smartFileUsed" class="smart-file-used" style="display:none;"></div>
+  </div>
+
   <!-- Output -->
   <div class="card" id="outputCard" style="display:none;">
     <div class="card-header">
@@ -412,20 +475,35 @@ editor.addEventListener('drop', e => {
 // --- Folder browser ---
 const CODE_EXTS = new Set(['.py','.txt','.js','.ts','.jsx','.tsx','.java','.c','.cpp','.cs','.go','.rb','.rs','.r','.m','.sh','.json','.yaml','.yml','.toml','.csv']);
 let folderFiles = [];
+let folderContents = {};   // filename → text content
 let activeItem = null;
 
 $('openFolderBtn').addEventListener('click', () => { $('folderInput').value = ''; $('folderInput').click(); });
-$('closeFolderBtn').addEventListener('click', () => { $('folderPanel').style.display = 'none'; folderFiles = []; });
+$('closeFolderBtn').addEventListener('click', () => {
+  $('folderPanel').style.display = 'none';
+  $('smartAskCard').style.display = 'none';
+  folderFiles = [];
+  folderContents = {};
+});
 
-$('folderInput').addEventListener('change', () => {
+$('folderInput').addEventListener('change', async () => {
   const all = Array.from($('folderInput').files);
   folderFiles = all
     .filter(f => { const ext = f.name.includes('.') ? '.' + f.name.split('.').pop().toLowerCase() : ''; return CODE_EXTS.has(ext); })
     .sort((a, b) => a.webkitRelativePath.localeCompare(b.webkitRelativePath));
 
   const list = $('fileList');
-  list.innerHTML = '';
+  list.innerHTML = '<div class="folder-empty">Loading files...</div>';
   activeItem = null;
+  folderContents = {};
+
+  // Read all file contents in parallel
+  await Promise.all(folderFiles.map(async file => {
+    try { folderContents[file.webkitRelativePath] = await file.text(); }
+    catch { folderContents[file.webkitRelativePath] = ''; }
+  }));
+
+  list.innerHTML = '';
 
   if (folderFiles.length === 0) {
     list.innerHTML = '<div class="folder-empty">No code files found in this folder.</div>';
@@ -435,21 +513,147 @@ $('folderInput').addEventListener('change', () => {
       const display = parts.length > 2 ? parts.slice(1).join('/') : parts[parts.length - 1];
       const item = document.createElement('div');
       item.className = 'file-item';
-      item.innerHTML = `<span class="file-item-icon">&#128196;</span><span>${display}</span>`;
+      item.innerHTML = `<span class="file-item-icon">&#128196;</span><span>${escHtml(display)}</span>`;
       item.addEventListener('click', () => {
         if (activeItem) activeItem.classList.remove('active');
         item.classList.add('active');
         activeItem = item;
-        loadFile(file);
+        editor.value = folderContents[file.webkitRelativePath] || '';
+        editor.dispatchEvent(new Event('input'));
+        $('fileLabel').textContent = file.name;
       });
       list.appendChild(item);
     });
   }
 
-  // Show folder name (top-level folder)
   const folderName = folderFiles[0]?.webkitRelativePath.split('/')[0] || 'folder';
   $('folderPath').textContent = folderName + '  —  ' + folderFiles.length + ' file' + (folderFiles.length === 1 ? '' : 's');
   $('folderPanel').style.display = 'block';
+  $('smartAskCard').style.display = 'block';
+  $('smartFolderTag').textContent = folderName;
+});
+
+// --- Smart Ask ---
+const MAX_FILE_LINES = 300;
+
+function buildFolderContext() {
+  return folderFiles.map(f => {
+    const path = f.webkitRelativePath;
+    const content = (folderContents[path] || '').split('\n').slice(0, MAX_FILE_LINES).join('\n');
+    return `=== ${path} ===\n${content}`;
+  }).join('\n\n');
+}
+
+async function callClaude(promptText) {
+  const res = await fetch('/api/messages', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 2048,
+      messages: [{ role: 'user', content: promptText }]
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error?.message || 'API error ' + res.status);
+  return (data.content || []).map(b => b.text || '').join('');
+}
+
+$('smartAskInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('smartAskBtn').click(); });
+
+$('smartAskBtn').addEventListener('click', async () => {
+  const query = $('smartAskInput').value.trim();
+  if (!query || running) return;
+  if (folderFiles.length === 0) return;
+
+  running = true;
+  $('smartAskBtn').disabled = true;
+  $('smartAskBtn').textContent = '...';
+  $('smartFileUsed').style.display = 'none';
+
+  $('outputCard').style.display = 'block';
+  $('outputTitle').textContent = 'Result';
+  $('outputBadge').className = 'badge badge-info';
+  $('outputBadge').textContent = 'thinking';
+  $('outputBody').className = 'output-body';
+  $('outputBody').textContent = '';
+
+  try {
+    const folderCtx = buildFolderContext();
+    const prompt = `You are a code assistant. The user has a folder with these files:
+
+${folderCtx}
+
+The user says: "${query}"
+
+Instructions:
+1. Identify which file they are referring to. If unclear, pick the most relevant one.
+2. Identify the action: run (simulate execution), debug (find bugs), explain (describe the code), improve (suggest improvements), or test (write pytest tests).
+3. Perform the action on that file.
+
+Start your reply with exactly:
+FILE: <relative/path/to/file>
+ACTION: <run|debug|explain|improve|test>
+---
+Then give the result.
+
+For "run": simulate Python 3 execution. Show stdout exactly. End with "Exit code: 0" or "Exit code: 1".
+For "debug": list bugs with line numbers and fixes.
+For "explain": describe purpose, logic, and key concepts.
+For "improve": suggest improvements and show revised code.
+For "test": generate pytest unit tests.`;
+
+    const response = await callClaude(prompt);
+
+    // Parse FILE / ACTION header
+    const fileMatch = response.match(/^FILE:\s*(.+)/m);
+    const actionMatch = response.match(/^ACTION:\s*(\w+)/m);
+    const bodyMatch = response.match(/---\n([\s\S]*)/);
+
+    const usedFile = fileMatch ? fileMatch[1].trim() : '';
+    const action = actionMatch ? actionMatch[1].trim() : 'run';
+    const body = bodyMatch ? bodyMatch[1].trim() : response;
+
+    // Highlight matching file in the list
+    if (usedFile) {
+      document.querySelectorAll('.file-item').forEach((item, i) => {
+        const file = folderFiles[i];
+        if (file && file.webkitRelativePath === usedFile) {
+          if (activeItem) activeItem.classList.remove('active');
+          item.classList.add('active');
+          activeItem = item;
+          // Load the file into the editor too
+          editor.value = folderContents[usedFile] || '';
+          editor.dispatchEvent(new Event('input'));
+          $('fileLabel').textContent = usedFile.split('/').pop();
+        }
+      });
+      $('smartFileUsed').textContent = 'Using: ' + usedFile;
+      $('smartFileUsed').style.display = 'block';
+    }
+
+    const meta = modeMeta[action] || modeMeta.run;
+    $('outputTitle').textContent = meta.title;
+    $('outputBadge').className = 'badge ' + meta.cls;
+    $('outputBadge').textContent = meta.badge;
+    if (action === 'run') {
+      $('outputBody').className = 'output-body mono';
+      const hasError = /traceback|error:/i.test(body);
+      $('outputBadge').className = 'badge ' + (hasError ? 'badge-err' : 'badge-ok');
+      $('outputBadge').textContent = hasError ? 'error' : 'success';
+    }
+    $('outputBody').textContent = body;
+
+    addHistory(action in modeMeta ? action : 'run', editor.value, body);
+  } catch (e) {
+    $('outputBody').textContent = 'Error: ' + e.message;
+    $('outputBadge').className = 'badge badge-err';
+    $('outputBadge').textContent = 'failed';
+  }
+
+  running = false;
+  $('smartAskBtn').disabled = false;
+  $('smartAskBtn').textContent = 'Ask';
 });
 
 // --- Mode ---
@@ -553,22 +757,7 @@ $('runBtn').addEventListener('click', async () => {
   const prompt = prompts[currentMode](code, stdin);
 
   try {
-    const res = await fetch('/api/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: prompt }]
-      })
-    });
-    const data = await res.json();
-
-    if (!res.ok) {
-      throw new Error(data.error?.message || 'API error ' + res.status);
-    }
-
-    const text = (data.content || []).map(b => b.text || '').join('');
+    const text = await callClaude(prompt);
 
     if (currentMode === 'run') {
       $('outputBody').className = 'output-body mono';
