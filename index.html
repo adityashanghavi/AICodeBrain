@@ -548,15 +548,6 @@ $('folderInput').addEventListener('change', async () => {
 });
 
 // --- Smart Ask ---
-const MAX_FILE_LINES = 300;
-
-function buildFolderContext() {
-  return folderFiles.map(f => {
-    const path = f.webkitRelativePath;
-    const content = (folderContents[path] || '').split('\n').slice(0, MAX_FILE_LINES).join('\n');
-    return `=== ${path} ===\n${content}`;
-  }).join('\n\n');
-}
 
 $('smartAskInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('smartAskBtn').click(); });
 
@@ -573,63 +564,63 @@ $('smartAskBtn').addEventListener('click', async () => {
   $('outputCard').style.display = 'block';
   $('outputTitle').textContent = 'Result';
   $('outputBadge').className = 'badge badge-info';
-  $('outputBadge').textContent = 'thinking';
+  $('outputBadge').textContent = 'identifying file...';
   $('outputBody').className = 'output-body';
   $('outputBody').textContent = '';
 
   try {
-    const folderCtx = buildFolderContext();
-    const prompt = `You are a code assistant. The user has a folder with these files:
+    // Step 1: send only file names to identify the right file
+    const fileList = folderFiles.map(f => f.webkitRelativePath).join('\n');
+    const pickPrompt = `The user has a folder with these files:\n${fileList}\n\nThe user says: "${query}"\n\nWhich single file are they most likely referring to? Reply with only the exact file path from the list above — nothing else.`;
 
-${folderCtx}
+    const pickedPath = (await callClaude(pickPrompt)).trim();
 
-The user says: "${query}"
+    // Find the matching file (fuzzy: exact match or filename match)
+    const matched = folderFiles.find(f =>
+      f.webkitRelativePath === pickedPath ||
+      f.webkitRelativePath.endsWith(pickedPath) ||
+      f.name === pickedPath
+    );
 
-Instructions:
-1. Identify which file they are referring to. If unclear, pick the most relevant one.
-2. Identify the action: run (simulate execution), debug (find bugs), explain (describe the code), improve (suggest improvements), or test (write pytest tests).
-3. Perform the action on that file.
+    if (!matched) throw new Error('Could not identify a matching file for: ' + pickedPath);
 
-Start your reply with exactly:
-FILE: <relative/path/to/file>
-ACTION: <run|debug|explain|improve|test>
----
-Then give the result.
+    // Highlight it in the list
+    document.querySelectorAll('.file-item').forEach((item, i) => {
+      if (folderFiles[i] === matched) {
+        if (activeItem) activeItem.classList.remove('active');
+        item.classList.add('active');
+        activeItem = item;
+      }
+    });
+    editor.value = folderContents[matched.webkitRelativePath] || '';
+    editor.dispatchEvent(new Event('input'));
+    $('fileLabel').textContent = matched.name;
+    $('smartFileUsed').textContent = 'Using: ' + matched.webkitRelativePath;
+    $('smartFileUsed').style.display = 'block';
 
-For "run": simulate Python 3 execution. Show stdout exactly. End with "Exit code: 0" or "Exit code: 1".
+    // Step 2: send only that file's content + the action
+    $('outputBadge').textContent = 'running...';
+    const code = folderContents[matched.webkitRelativePath] || '';
+    const actionPrompt = `You are a code assistant. The user says: "${query}"
+
+Identify the action (run, debug, explain, improve, or test) and perform it on this file (${matched.name}):
+
+\`\`\`
+${code}
+\`\`\`
+
+Start your reply with ACTION: <run|debug|explain|improve|test>, then a newline, then the result.
+
+For "run": simulate execution, show stdout only, end with Exit code: 0 or 1.
 For "debug": list bugs with line numbers and fixes.
 For "explain": describe purpose, logic, and key concepts.
-For "improve": suggest improvements and show revised code.
+For "improve": suggest improvements with revised code.
 For "test": generate pytest unit tests.`;
 
-    const response = await callClaude(prompt);
-
-    // Parse FILE / ACTION header
-    const fileMatch = response.match(/^FILE:\s*(.+)/m);
+    const response = await callClaude(actionPrompt);
     const actionMatch = response.match(/^ACTION:\s*(\w+)/m);
-    const bodyMatch = response.match(/---\n([\s\S]*)/);
-
-    const usedFile = fileMatch ? fileMatch[1].trim() : '';
     const action = actionMatch ? actionMatch[1].trim() : 'run';
-    const body = bodyMatch ? bodyMatch[1].trim() : response;
-
-    // Highlight matching file in the list
-    if (usedFile) {
-      document.querySelectorAll('.file-item').forEach((item, i) => {
-        const file = folderFiles[i];
-        if (file && file.webkitRelativePath === usedFile) {
-          if (activeItem) activeItem.classList.remove('active');
-          item.classList.add('active');
-          activeItem = item;
-          // Load the file into the editor too
-          editor.value = folderContents[usedFile] || '';
-          editor.dispatchEvent(new Event('input'));
-          $('fileLabel').textContent = usedFile.split('/').pop();
-        }
-      });
-      $('smartFileUsed').textContent = 'Using: ' + usedFile;
-      $('smartFileUsed').style.display = 'block';
-    }
+    const body = response.replace(/^ACTION:\s*\w+\n?/m, '').trim();
 
     const meta = modeMeta[action] || modeMeta.run;
     $('outputTitle').textContent = meta.title;
@@ -642,8 +633,8 @@ For "test": generate pytest unit tests.`;
       $('outputBadge').textContent = hasError ? 'error' : 'success';
     }
     $('outputBody').textContent = body;
-
     addHistory(action in modeMeta ? action : 'run', editor.value, body);
+
   } catch (e) {
     $('outputBody').textContent = 'Error: ' + e.message;
     $('outputBadge').className = 'badge badge-err';
