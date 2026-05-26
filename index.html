@@ -489,7 +489,18 @@ function detectSensorType(code) {
   return null;
 }
 
-// --- Hardware insights prompt builder ---
+// --- Key-insight-only prompt (fast path, Haiku) ---
+function buildKeyInsightOnlyPrompt(sensorType, code, output) {
+  return `A **${sensorType}** script produced this output:
+
+\`\`\`
+${output.slice(0, 600)}
+\`\`\`
+
+Write ONE punchy sentence (max 20 words) that captures the single most important takeaway for a non-technical product manager. No jargon. No hedging. Reply with only that sentence.`;
+}
+
+// --- Full hardware insights prompt builder ---
 function buildHwPrompt(sensorType, code, output) {
   const codeSnippet = code.split('\n').slice(0, 60).join('\n');
   return `You are a hardware engineer specializing in biosensor and physiological measurement systems.
@@ -508,7 +519,7 @@ ${codeSnippet}
 Based on the sensor data, outputs, and computed metrics, provide HARDWARE INSIGHTS covering exactly these six categories. Use the exact headings below:
 
 ### Key Insight
-In 1–2 plain-English sentences, summarise what these results mean for a non-technical product manager. No jargon. Focus on what the signal reveals about the user or patient state and whether the system is performing as intended.
+One punchy sentence (max 20 words) — the single most important takeaway for a product manager. No jargon, no hedging.
 
 ### Signal Quality
 Assess noise level, artifacts, and whether the captured signal looks clean or degraded.
@@ -559,7 +570,7 @@ function renderHwMarkdown(text) {
   return html;
 }
 
-async function showHardwareInsights(code, output) {
+async function showHardwareInsights(code, output, query = '') {
   const sensorType = detectSensorType(code);
   if (!sensorType) {
     $('keyInsightCard').style.display = 'none';
@@ -567,38 +578,54 @@ async function showHardwareInsights(code, output) {
     return;
   }
 
-  // Show both cards in loading state
+  const keyInsightOnly = /key insight/i.test(query);
+
+  // Key Insight card — always shown
   $('keyInsightCard').style.display = 'block';
   $('kiSensorTag').textContent = '⚡ ' + sensorType;
   $('kiBody').innerHTML = '';
   $('kiLoading').style.display = 'flex';
 
-  $('hardwareInsightsCard').style.display = 'block';
-  $('hwSensorTag').textContent = '⚡ ' + sensorType;
-  $('hwBody').innerHTML = '';
-  $('hwLoading').style.display = 'flex';
+  // Hardware Insights card — skip when user asked for key insight only
+  $('hardwareInsightsCard').style.display = keyInsightOnly ? 'none' : 'block';
+  if (!keyInsightOnly) {
+    $('hwSensorTag').textContent = '⚡ ' + sensorType;
+    $('hwBody').innerHTML = '';
+    $('hwLoading').style.display = 'flex';
+  }
 
   try {
-    const prompt = buildHwPrompt(sensorType, code, output);
-    const insights = await callClaude(prompt, 'claude-sonnet-4-6', 1200);
+    if (keyInsightOnly) {
+      // Fast path: Haiku, tiny prompt, key insight only
+      const prompt = buildKeyInsightOnlyPrompt(sensorType, code, output);
+      const keyText = await callClaude(prompt, 'claude-haiku-4-5-20251001', 80);
+      $('kiLoading').style.display = 'none';
+      $('kiBody').innerHTML = `<p>${escHtml(keyText.trim())}</p>`;
+    } else {
+      // Full path: Sonnet, both cards
+      const prompt = buildHwPrompt(sensorType, code, output);
+      const insights = await callClaude(prompt, 'claude-sonnet-4-6', 1200);
 
-    // Extract Key Insight block → its own card
-    const keyMatch = insights.match(/###\s*Key Insight\s*\n+([\s\S]*?)(?=\n###|$)/i);
-    const keyText = keyMatch ? keyMatch[1].trim() : null;
-    $('kiLoading').style.display = 'none';
-    $('kiBody').innerHTML = keyText
-      ? `<p>${escHtml(keyText)}</p>`
-      : '<p style="color:var(--text-tertiary)">No key insight available.</p>';
+      // Extract Key Insight block → its own card
+      const keyMatch = insights.match(/###\s*Key Insight\s*\n+([\s\S]*?)(?=\n###|$)/i);
+      const keyText = keyMatch ? keyMatch[1].trim() : null;
+      $('kiLoading').style.display = 'none';
+      $('kiBody').innerHTML = keyText
+        ? `<p>${escHtml(keyText)}</p>`
+        : '<p style="color:var(--text-tertiary)">No key insight available.</p>';
 
-    // Remaining technical sections → Hardware Insights card
-    const rest = insights.replace(/###\s*Key Insight\s*\n+[\s\S]*?(?=\n###|$)/i, '').trim();
-    $('hwLoading').style.display = 'none';
-    $('hwBody').innerHTML = renderHwMarkdown(rest);
+      // Remaining technical sections → Hardware Insights card
+      const rest = insights.replace(/###\s*Key Insight\s*\n+[\s\S]*?(?=\n###|$)/i, '').trim();
+      $('hwLoading').style.display = 'none';
+      $('hwBody').innerHTML = renderHwMarkdown(rest);
+    }
   } catch (e) {
     $('kiLoading').style.display = 'none';
     $('kiBody').innerHTML = '<p style="color:var(--red-text)">Could not load key insight: ' + escHtml(e.message) + '</p>';
-    $('hwLoading').style.display = 'none';
-    $('hwBody').innerHTML = '<p style="color:var(--red-text)">Could not load hardware insights: ' + escHtml(e.message) + '</p>';
+    if (!keyInsightOnly) {
+      $('hwLoading').style.display = 'none';
+      $('hwBody').innerHTML = '<p style="color:var(--red-text)">Could not load hardware insights: ' + escHtml(e.message) + '</p>';
+    }
   }
 }
 
@@ -876,7 +903,7 @@ Reply with ONLY valid Python code — no explanation, no markdown, no code fence
 
     showOutput(body.trim() || '(no output)', plots);
     addHistory(action, fullCode, body.trim());
-    if (action === 'run' || action === 'data') showHardwareInsights(fullCode, body.trim());
+    if (action === 'run' || action === 'data') showHardwareInsights(fullCode, body.trim(), query);
 
   } catch (e) {
     $('outputBody').textContent = 'Error: ' + e.message;
