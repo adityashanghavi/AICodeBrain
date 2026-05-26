@@ -342,27 +342,15 @@
     .hw-body li { margin-bottom: 3px; }
     .hw-body p { margin-bottom: 6px; }
     .hw-body strong { color: var(--text); }
-    /* Key Insight callout */
-    .hw-key-insight {
-      margin: 0 0 14px;
-      padding: 11px 14px;
-      background: var(--blue-bg);
-      border-left: 3px solid var(--blue-text);
-      border-radius: var(--radius-md);
-      font-size: 13.5px;
-      line-height: 1.65;
+    /* Key Insight card */
+    #keyInsightCard { display: none; }
+    .key-insight-body {
+      padding: 14px 16px;
+      font-size: 14px;
+      line-height: 1.7;
       color: var(--text);
     }
-    .hw-key-insight-label {
-      display: block;
-      font-size: 10.5px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.07em;
-      color: var(--blue-text);
-      margin-bottom: 5px;
-    }
-    .hw-key-insight p { margin: 0; }
+    .key-insight-body p { margin: 0; }
     .hw-loading {
       display: flex; align-items: center; gap: 8px;
       padding: 14px 16px;
@@ -444,6 +432,18 @@ print(greet('World'))
     </div>
     <div class="output-body" id="outputBody"></div>
     <div id="outputPlots" style="display:none; padding: 12px 16px; flex-direction:column; gap:12px;"></div>
+  </div>
+
+  <!-- Key Insight -->
+  <div class="card" id="keyInsightCard">
+    <div class="card-header">
+      <span class="card-title">💡 Key Insight</span>
+      <span class="hw-sensor-tag" id="kiSensorTag">&#128268; sensor</span>
+    </div>
+    <div id="kiLoading" class="hw-loading" style="display:none;">
+      <span class="spinner"></span> Generating key insight...
+    </div>
+    <div class="key-insight-body" id="kiBody"></div>
   </div>
 
   <!-- Hardware Insights -->
@@ -562,9 +562,16 @@ function renderHwMarkdown(text) {
 async function showHardwareInsights(code, output) {
   const sensorType = detectSensorType(code);
   if (!sensorType) {
+    $('keyInsightCard').style.display = 'none';
     $('hardwareInsightsCard').style.display = 'none';
     return;
   }
+
+  // Show both cards in loading state
+  $('keyInsightCard').style.display = 'block';
+  $('kiSensorTag').textContent = '⚡ ' + sensorType;
+  $('kiBody').innerHTML = '';
+  $('kiLoading').style.display = 'flex';
 
   $('hardwareInsightsCard').style.display = 'block';
   $('hwSensorTag').textContent = '⚡ ' + sensorType;
@@ -574,20 +581,22 @@ async function showHardwareInsights(code, output) {
   try {
     const prompt = buildHwPrompt(sensorType, code, output);
     const insights = await callClaude(prompt, 'claude-sonnet-4-6', 1200);
-    $('hwLoading').style.display = 'none';
 
-    // Extract Key Insight block for the PM-friendly callout
+    // Extract Key Insight block → its own card
     const keyMatch = insights.match(/###\s*Key Insight\s*\n+([\s\S]*?)(?=\n###|$)/i);
     const keyText = keyMatch ? keyMatch[1].trim() : null;
-    const rest = insights.replace(/###\s*Key Insight\s*\n+[\s\S]*?(?=\n###|$)/i, '').trim();
+    $('kiLoading').style.display = 'none';
+    $('kiBody').innerHTML = keyText
+      ? `<p>${escHtml(keyText)}</p>`
+      : '<p style="color:var(--text-tertiary)">No key insight available.</p>';
 
-    let html = '';
-    if (keyText) {
-      html += `<div class="hw-key-insight"><span class="hw-key-insight-label">💡 Key Insight</span><p>${escHtml(keyText)}</p></div>`;
-    }
-    html += renderHwMarkdown(rest);
-    $('hwBody').innerHTML = html;
+    // Remaining technical sections → Hardware Insights card
+    const rest = insights.replace(/###\s*Key Insight\s*\n+[\s\S]*?(?=\n###|$)/i, '').trim();
+    $('hwLoading').style.display = 'none';
+    $('hwBody').innerHTML = renderHwMarkdown(rest);
   } catch (e) {
+    $('kiLoading').style.display = 'none';
+    $('kiBody').innerHTML = '<p style="color:var(--red-text)">Could not load key insight: ' + escHtml(e.message) + '</p>';
     $('hwLoading').style.display = 'none';
     $('hwBody').innerHTML = '<p style="color:var(--red-text)">Could not load hardware insights: ' + escHtml(e.message) + '</p>';
   }
@@ -859,6 +868,7 @@ Reply with ONLY valid Python code — no explanation, no markdown, no code fence
       $('outputBadge').textContent = hasError ? 'error' : 'success';
     } else {
       // Claude for debug / explain / improve / test
+      $('keyInsightCard').style.display = 'none';
       $('hardwareInsightsCard').style.display = 'none';
       const claudePrompt = `You are a code assistant. Perform the action "${action}" on this file (${matched.name}):\n\n\`\`\`\n${truncated}\n\`\`\``;
       body = await callClaude(claudePrompt);
@@ -992,6 +1002,7 @@ $('runBtn').addEventListener('click', async () => {
       showHardwareInsights(code, output.trim());
     } else {
       // Claude for debug / explain / improve / test
+      $('keyInsightCard').style.display = 'none';
       $('hardwareInsightsCard').style.display = 'none';
       const prompt = prompts[currentMode](code, '');
       const text = await callClaude(prompt);
