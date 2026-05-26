@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git commit -m ':*)",
+      "Bash(python demo/ecg_sensor.py)",
+      "Bash(python demo/ppg_sensor.py)",
+      "Bash(python demo/eyetracker.py)",
+      "Bash(python demo/eeg_processor.py)",
+      "Bash(python demo/gsr_sensor.py)",
+      "Bash(python demo/imu_sensor.py)",
+      "Bash(python demo/adaptation_engine.py)"
+    ]
+  }
+}

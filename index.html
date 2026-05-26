@@ -312,6 +312,62 @@
     .history-snippet { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .history-time { font-size: 11px; color: var(--text-tertiary); }
     .history-empty { padding: 14px 16px; font-size: 13px; color: var(--text-tertiary); }
+
+    /* Hardware insights */
+    #hardwareInsightsCard { display: none; }
+    .hw-sensor-tag {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 11px; font-weight: 500;
+      padding: 2px 9px;
+      border-radius: var(--radius-md);
+      background: var(--amber-bg); color: var(--amber-text);
+      border: 0.5px solid transparent;
+    }
+    .hw-body {
+      padding: 14px 16px;
+      font-size: 13px;
+      line-height: 1.75;
+      color: var(--text);
+    }
+    .hw-body h3 {
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-secondary);
+      margin: 14px 0 4px;
+    }
+    .hw-body h3:first-child { margin-top: 0; }
+    .hw-body ul { padding-left: 18px; }
+    .hw-body li { margin-bottom: 3px; }
+    .hw-body p { margin-bottom: 6px; }
+    .hw-body strong { color: var(--text); }
+    /* Key Insight callout */
+    .hw-key-insight {
+      margin: 0 0 14px;
+      padding: 11px 14px;
+      background: var(--blue-bg);
+      border-left: 3px solid var(--blue-text);
+      border-radius: var(--radius-md);
+      font-size: 13.5px;
+      line-height: 1.65;
+      color: var(--text);
+    }
+    .hw-key-insight-label {
+      display: block;
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.07em;
+      color: var(--blue-text);
+      margin-bottom: 5px;
+    }
+    .hw-key-insight p { margin: 0; }
+    .hw-loading {
+      display: flex; align-items: center; gap: 8px;
+      padding: 14px 16px;
+      font-size: 13px; color: var(--text-tertiary);
+    }
   </style>
 </head>
 <body>
@@ -390,6 +446,18 @@ print(greet('World'))
     <div id="outputPlots" style="display:none; padding: 12px 16px; flex-direction:column; gap:12px;"></div>
   </div>
 
+  <!-- Hardware Insights -->
+  <div class="card" id="hardwareInsightsCard">
+    <div class="card-header">
+      <span class="card-title">Hardware Insights</span>
+      <span class="hw-sensor-tag" id="hwSensorTag">&#128268; sensor</span>
+    </div>
+    <div id="hwLoading" class="hw-loading" style="display:none;">
+      <span class="spinner"></span> Analyzing hardware characteristics...
+    </div>
+    <div class="hw-body" id="hwBody"></div>
+  </div>
+
   <!-- Footer -->
   <p style="text-align:center; font-size:13px; color:var(--text-tertiary); padding-bottom:0.5rem;">Created by Aditya Shanghavi</p>
 
@@ -408,6 +476,122 @@ print(greet('World'))
 
 <script>
 const $ = id => document.getElementById(id);
+
+// --- Sensor detection ---
+function detectSensorType(code) {
+  if (/\becg\b|\bekg\b|electrocardiogram|pqrst|qrs.?complex|r_peak|r-peak|rr.?interval|\bhrv\b|rmssd|cardiac.?state/i.test(code)) return 'ECG (Electrocardiogram)';
+  if (/\bppg\b|photoplethysmograph|pulsatile|systolic.?peak|dicrotic|\bibi\b|\bspo2\b|inter.?beat.?interval/i.test(code)) return 'PPG (Photoplethysmography)';
+  if (/eeg|electroencephalogram|brain.?wave|cognitive.?load|band.?power|delta.*theta|alpha.*beta|bandpass/i.test(code)) return 'EEG';
+  if (/eye.?track|gaze|fixation|saccade|blink.?rate|pupil|scanpath/i.test(code)) return 'Eye Tracker';
+  if (/\bgsr\b|galvanic|skin.?conductance|\beda\b|electrodermal|arousal.*score|\bscr\b|phasic|tonic/i.test(code)) return 'GSR (Galvanic Skin Response)';
+  if (/\bimu\b|inertial.?measurement|acceleromet|gyroscop|step.?cadence|accel_magnitude|detect_steps|gyro_rms/i.test(code)) return 'IMU (Inertial Measurement Unit)';
+  if (/adaptation.?engine|engagement.*score|cognitive_load.*arousal|learner.?state|multi.?sensor|sensor.?fusion/i.test(code)) return 'Multi-Sensor Fusion';
+  return null;
+}
+
+// --- Hardware insights prompt builder ---
+function buildHwPrompt(sensorType, code, output) {
+  const codeSnippet = code.split('\n').slice(0, 60).join('\n');
+  return `You are a hardware engineer specializing in biosensor and physiological measurement systems.
+
+The user ran a **${sensorType}** processing script and got these results:
+
+\`\`\`
+${output.slice(0, 800)}
+\`\`\`
+
+Code overview (first 60 lines):
+\`\`\`python
+${codeSnippet}
+\`\`\`
+
+Based on the sensor data, outputs, and computed metrics, provide HARDWARE INSIGHTS covering exactly these six categories. Use the exact headings below:
+
+### Key Insight
+In 1–2 plain-English sentences, summarise what these results mean for a non-technical product manager. No jargon. Focus on what the signal reveals about the user or patient state and whether the system is performing as intended.
+
+### Signal Quality
+Assess noise level, artifacts, and whether the captured signal looks clean or degraded.
+
+### Sampling & Resolution
+Comment on whether the sampling rate and bit-depth appear adequate for this application. State ideal specs.
+
+### Hardware Recommendations
+Suggest specific hardware components or upgrades (sensor model class, amplifier, ADC resolution, cable shielding, etc.) that would improve results.
+
+### Calibration & Placement
+Give concrete calibration steps or physical placement/setup guidance specific to ${sensorType}.
+
+### Minimum Hardware Spec
+State the minimum hardware specification needed to reliably reproduce results of this quality.
+
+Be concise, specific, and practical. Avoid generic advice — tie every point directly to what the output/metrics show.`;
+}
+
+// --- Render hardware insights (markdown-lite renderer) ---
+function renderHwMarkdown(text) {
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const inlineFormat = s => esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`(.+?)`/g, '<code>$1</code>');
+
+  const lines = text.split('\n');
+  let html = '';
+  let inList = false;
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    const headingMatch = line.match(/^#{2,3}\s+(.*)/);
+    const listMatch = line.match(/^\s*[-*]\s+(.*)/);
+
+    if (headingMatch) {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += `<h3>${inlineFormat(headingMatch[1])}</h3>`;
+    } else if (listMatch) {
+      if (!inList) { html += '<ul>'; inList = true; }
+      html += `<li>${inlineFormat(listMatch[1])}</li>`;
+    } else if (line.trim() === '') {
+      if (inList) { html += '</ul>'; inList = false; }
+    } else {
+      if (inList) { html += '</ul>'; inList = false; }
+      html += `<p>${inlineFormat(line)}</p>`;
+    }
+  }
+  if (inList) html += '</ul>';
+  return html;
+}
+
+async function showHardwareInsights(code, output) {
+  const sensorType = detectSensorType(code);
+  if (!sensorType) {
+    $('hardwareInsightsCard').style.display = 'none';
+    return;
+  }
+
+  $('hardwareInsightsCard').style.display = 'block';
+  $('hwSensorTag').textContent = '⚡ ' + sensorType;
+  $('hwBody').innerHTML = '';
+  $('hwLoading').style.display = 'flex';
+
+  try {
+    const prompt = buildHwPrompt(sensorType, code, output);
+    const insights = await callClaude(prompt, 'claude-sonnet-4-6', 1200);
+    $('hwLoading').style.display = 'none';
+
+    // Extract Key Insight block for the PM-friendly callout
+    const keyMatch = insights.match(/###\s*Key Insight\s*\n+([\s\S]*?)(?=\n###|$)/i);
+    const keyText = keyMatch ? keyMatch[1].trim() : null;
+    const rest = insights.replace(/###\s*Key Insight\s*\n+[\s\S]*?(?=\n###|$)/i, '').trim();
+
+    let html = '';
+    if (keyText) {
+      html += `<div class="hw-key-insight"><span class="hw-key-insight-label">💡 Key Insight</span><p>${escHtml(keyText)}</p></div>`;
+    }
+    html += renderHwMarkdown(rest);
+    $('hwBody').innerHTML = html;
+  } catch (e) {
+    $('hwLoading').style.display = 'none';
+    $('hwBody').innerHTML = '<p style="color:var(--red-text)">Could not load hardware insights: ' + escHtml(e.message) + '</p>';
+  }
+}
 
 // --- Show output + plots ---
 function showOutput(text, plots) {
@@ -438,7 +622,7 @@ async function runPython(code) {
 }
 
 // --- Claude API (proxied through local server, key lives in .env) ---
-async function callClaude(promptText, model = 'claude-sonnet-4-20250514', max_tokens = 1024) {
+async function callClaude(promptText, model = 'claude-sonnet-4-6', max_tokens = 1024) {
   const res = await fetch('/api/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -550,7 +734,7 @@ $('folderInput').addEventListener('change', async () => {
       });
     }
 
-    $('folderPath').textContent = folderName + '  —  ' + folderFiles.length + ' file' + (folderFiles.length === 1 ? '' : 's');
+    $('folderPath').textContent = folderName + '  (' + folderFiles.length + ' file' + (folderFiles.length === 1 ? '' : 's') + ')';
     $('smartAskCard').style.display = 'block';
     $('smartFolderTag').textContent = folderName;
   } catch (err) {
@@ -617,10 +801,17 @@ $('smartAskBtn').addEventListener('click', async () => {
     const MAX_LINES = 300;
     const truncated = fullCode.split('\n').slice(0, MAX_LINES).join('\n');
 
-    // Ask Claude which action to take
-    const actionPrompt = `The user says: "${query}"\n\nWhich action should be performed on the file "${matched.name}"?\nReply with exactly one word: run, debug, explain, improve, or test.`;
-    const actionRaw = (await callClaude(actionPrompt, 'claude-haiku-4-5-20251001', 10)).trim().toLowerCase();
-    const action = ['run','debug','explain','improve','test'].find(a => actionRaw.includes(a)) || 'run';
+    // Pre-check: if the query references a specific sensor channel/signal, force 'data'
+    const dataQueryRe = /\b(show|display|plot|graph|give|see|view)\b.{0,60}\b([xyz][\s\-]?(?:accel(?:eration)?|gyro(?:scop\w*)?|axis)|raw\s+data|signal|channel|values?)\b|\b[xyz][\s\-]?(?:accel(?:eration)?|axis)\b/i;
+    let action;
+    if (dataQueryRe.test(query)) {
+      action = 'data';
+    } else {
+      // Ask Claude which action to take
+      const actionPrompt = `The user says: "${query}"\n\nWhich action should be performed on the file "${matched.name}"?\n- "data" means the user wants to see specific raw values, signals, or a focused view of one variable/channel (e.g. "show me Z acceleration", "display the gyro data", "what are the step times")\n- "run" means run the whole script as-is\n- "debug", "explain", "improve", "test" are self-explanatory\nReply with exactly one word: run, debug, explain, improve, test, or data.`;
+      const actionRaw = (await callClaude(actionPrompt, 'claude-haiku-4-5-20251001', 10)).trim().toLowerCase();
+      action = ['data','run','debug','explain','improve','test'].find(a => actionRaw.includes(a)) || 'run';
+    }
 
     const meta = modeMeta[action] || modeMeta.run;
     $('outputTitle').textContent = meta.title;
@@ -629,23 +820,53 @@ $('smartAskBtn').addEventListener('click', async () => {
 
     let body = '', plots = [];
 
-    if (action === 'run') {
+    if (action === 'data') {
+      // Claude generates a targeted snippet to extract + display the requested data
+      $('outputBadge').textContent = 'generating...';
+      const dataPrompt = `You are a Python code generator. The user has this file "${matched.name}" and asks: "${query}"
+
+Here is the file content:
+\`\`\`python
+${truncated}
+\`\`\`
+
+Generate a complete, self-contained Python script that:
+1. Copies or re-uses the necessary functions/constants from the file above (do not import the file — inline them)
+2. Calls those functions to generate the data (use a fixed random seed of 42 for reproducibility)
+3. Extracts and prints the specific values the user asked about — show the first 50 values as a numbered list, then print min/max/mean
+4. Also plots the requested signal with matplotlib (label axes, add a title) and calls plt.show()
+
+Reply with ONLY valid Python code — no explanation, no markdown, no code fences.`;
+
+      const raw = await callClaude(dataPrompt, 'claude-sonnet-4-6', 2000);
+      const generatedCode = raw.replace(/^```[a-z]*\n?/i, '').replace(/\n?```\s*$/i, '').trim().replace(/\u2014/g, ':');
+      $('outputBadge').textContent = 'running...';
+      const result = await runPython(generatedCode);
+      body = (result.stdout || '') + (result.stderr ? '\n[stderr]\n' + result.stderr : '');
+      plots = result.plots || [];
+      const hasError = result.exitCode !== 0 || /traceback|error:/i.test(body);
+      $('outputBody').className = 'output-body mono';
+      $('outputBadge').className = 'badge ' + (hasError ? 'badge-err' : 'badge-ok');
+      $('outputBadge').textContent = hasError ? 'error' : 'success';
+    } else if (action === 'run') {
       // Real Python execution with plot capture
       const result = await runPython(fullCode);
       body = (result.stdout || '') + (result.stderr ? '\n[stderr]\n' + result.stderr : '');
-      plots = /\bplot\b/i.test(query) ? (result.plots || []) : [];
+      plots = /\bplots?\b/i.test(query) ? (result.plots || []) : [];
       const hasError = result.exitCode !== 0 || /traceback|error:/i.test(body);
       $('outputBody').className = 'output-body mono';
       $('outputBadge').className = 'badge ' + (hasError ? 'badge-err' : 'badge-ok');
       $('outputBadge').textContent = hasError ? 'error' : 'success';
     } else {
       // Claude for debug / explain / improve / test
+      $('hardwareInsightsCard').style.display = 'none';
       const claudePrompt = `You are a code assistant. Perform the action "${action}" on this file (${matched.name}):\n\n\`\`\`\n${truncated}\n\`\`\``;
       body = await callClaude(claudePrompt);
     }
 
     showOutput(body.trim() || '(no output)', plots);
     addHistory(action, fullCode, body.trim());
+    if (action === 'run' || action === 'data') showHardwareInsights(fullCode, body.trim());
 
   } catch (e) {
     $('outputBody').textContent = 'Error: ' + e.message;
@@ -731,7 +952,8 @@ const modeMeta = {
   debug:   { title: 'Debug report',    badge: 'debug',     cls: 'badge-warn' },
   explain: { title: 'Explanation',     badge: 'explained', cls: 'badge-info' },
   improve: { title: 'Suggestions',     badge: 'refactored',cls: 'badge-info' },
-  test:    { title: 'Generated tests', badge: 'pytest',    cls: 'badge-ok'   }
+  test:    { title: 'Generated tests', badge: 'pytest',    cls: 'badge-ok'   },
+  data:    { title: 'Raw Data',        badge: 'data',      cls: 'badge-info' }
 };
 
 // --- Run ---
@@ -767,8 +989,10 @@ $('runBtn').addEventListener('click', async () => {
       $('outputBadge').textContent = hasError ? 'error' : 'success';
       showOutput(output.trim() || '(no output)', result.plots);
       addHistory(currentMode, code, output.trim());
+      showHardwareInsights(code, output.trim());
     } else {
       // Claude for debug / explain / improve / test
+      $('hardwareInsightsCard').style.display = 'none';
       const prompt = prompts[currentMode](code, '');
       const text = await callClaude(prompt);
       showOutput(text, []);

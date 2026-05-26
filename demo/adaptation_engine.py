@@ -96,7 +96,7 @@ def plot_results(log):
     point_colors = [STATE_COLORS[s] for s in states]
 
     fig, axes = plt.subplots(3, 1, figsize=(11, 9), sharex=True)
-    fig.suptitle('Adaptive Learning Engine — Session Report', fontsize=14, fontweight='bold')
+    fig.suptitle('Adaptive Learning Engine: Session Report', fontsize=14, fontweight='bold')
 
     # --- Panel 1: Engagement score ---
     ax = axes[0]

@@ -67,6 +67,14 @@ def extract_fixations(samples, labels, min_duration=0.1):
                     fixations.append({'x': cx, 'y': cy, 'duration': dur,
                                       'onset': group[0]['timestamp']})
                 group = []
+    # Flush any trailing fixation group that never hit a non-fixation sample
+    if group:
+        dur = group[-1]['timestamp'] - group[0]['timestamp']
+        if dur >= min_duration:
+            cx = sum(g['x'] for g in group) / len(group)
+            cy = sum(g['y'] for g in group) / len(group)
+            fixations.append({'x': cx, 'y': cy, 'duration': dur,
+                              'onset': group[0]['timestamp']})
     return fixations
 
 

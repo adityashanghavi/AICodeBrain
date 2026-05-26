@@ -113,7 +113,7 @@ ${code}
       // Clean up temp dir
       try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
 
-      const exitCode = err?.code ?? 0;
+      const exitCode = err ? (err.code ?? 1) : 0;
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         stdout: stdout || '',
